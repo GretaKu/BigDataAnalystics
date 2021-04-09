@@ -19,7 +19,6 @@ names(tweets)
 str(tweets$created_at)
 
 tweets$created_at <- as.Date(tweets$created_at, "%Y-%m-%d")
-tweets$date_time <- as.numeric(tweets$created_at)
 
 
 ## binary variable if president or not
@@ -33,8 +32,9 @@ tweets$month <- substr(tweets$created_at, 6, 7)
 tweets$year <- substr(tweets$created_at, 1, 4)
 
 tweets$year_month <- as.numeric(paste(tweets$year, tweets$month, sep=""))
-x <- as.data.frame(table(tweets$year_month))
+table(tweets$year_month)
 
+str(tweets)
 
 # Saving and Loading Tweets -----------------------------------------------
 
@@ -72,8 +72,8 @@ topfeatures(myDfm, n = 200)
 myDfm.trim <-dfm_trim(myDfm, min_docfreq = 2, verbose=TRUE)
 topfeatures(myDfm, n = 200)
 
-length(myDfm@Dimnames$features) # 2804 features
-length(myDfm.trim@Dimnames$features) # 1577 features
+length(myDfm@Dimnames$features) # 2811 features
+length(myDfm.trim@Dimnames$features) # 1578 features
 
 
 # Convert the dfm from Quanteda to STM: this is a crucial step!!!
