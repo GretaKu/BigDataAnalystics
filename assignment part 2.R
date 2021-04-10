@@ -80,47 +80,90 @@ topfeatures(myDfm, n = 200)
 length(myDfm@Dimnames$features) # 2811 features
 length(myDfm.trim@Dimnames$features) # 1578 features
 
-
-# Convert the dfm from Quanteda to STM: this is a crucial step!!!
-# When coverting the dfm, you have also to list the document variables that are present in the corpus!
-# in our case: datetime, repub, year
-
 DfmStm <- convert(myDfm, to = "stm", docvars = docvars(myCorpus))
 head(docvars(myCorpus))
 str(DfmStm)
 
 
+# LDA Model Set-Up ---------------------------------------------------------
+
+lda_dfm <- dfm(myCorpus, remove =(stopwords("smart")), tolower = TRUE, stem = TRUE,
+               remove_punct = TRUE, remove_numbers=TRUE)
+lda_dfm <- dfm_remove(lda_dfm, c('*-time', '*-timeUpdated', 'GMT', 'BST')) 
+lda_dfm <-   dfm_trim(lda_dfm, min_termfreq = 0.95, termfreq_type = "quantile", 
+                      max_docfreq = 0.1, docfreq_type = "prop")
+
+# 20 top words
+topfeatures(lda_dfm, 20)
+
+# keeping only documents with number of tokens >0 
+lda_dfm[ntoken(lda_dfm) == 0,]
+lda_dfm <- lda_dfm[ntoken(lda_dfm) > 0,]
+
+
+dtm <- convert(lda_dfm, to = "topicmodels")
+set.seed(123)
+system.time(lda <- LDA(dtm, method= "Gibbs", k = 14))
+
+# extracting the most important topics
+terms(lda, 10)
+
+# adding topics to each document
+topics <- get_topics(lda, 1)
+head(topics, 10)
+
+# or you can obtain the most likely topics using topics() and save them as a document-level variable.
+head(topics(lda))
+docvars(lda_dfm, 'pred_topic') <- topics(lda)
+str(lda_dfm)
+
+
+# LDA Estimation of optimal K ---------------------------------------------------------
+
+topic_diagnostics(lda, dtm)
+topic_coherence(lda, dtm)
+topic_exclusivity(lda)
+
+mean(topic_coherence(lda, dtm))
+mean(topic_exclusivity(lda))
+
+#  K may vary between 4 and 25
+top <- c(4:25)
+top
+
+# empty DF
+results <- data.frame(first=vector(), second=vector(), third=vector()) 
+results 
+
+system.time(
+  for (i  in top) 
+  { 
+    set.seed(123)
+    lda <- LDA(dtm, method= "Gibbs", k = (i),  control=list(verbose=50L, iter=100))
+    topic <- (i)
+    coherence <- mean(topic_coherence(lda, dtm))
+    exclusivity <- mean(topic_exclusivity(lda))
+    results <- rbind(results , cbind(topic, coherence, exclusivity ))
+  }
+)
+
+results
+
+#K=14 seems to be the best choice
+plot(results$coherence, results$exclusivity, main="Scatterplot Example",
+     xlab="Semantic Coherence", ylab="Exclusivity ", pch=19)
+text(results$coherence, results$exclusivity, labels=results$topic, cex= 1,  pos=4)
+
+
+
 # STM ---------------------------------------------------------------------
 
-# 1) we want to extract 15 topics (i.e., K=15)
+# Running STM with optimat number of K = 14
 
-# 2) we want to control for the following covariates in affecting topic prevalence: repub and year;
-# We could have ran a model with covariates affecting topical content as well (see below for an example).
-# While including more covariates in topic prevalence will rarely affect the speed of the model, 
-# including additional levels of the content covariates (topical content) can make the model much slower to converge.
-# This is due to the model operating in the much higher dimensional space of words in dictionary 
-# (which tend to be in the thousands) as opposed to topics. That's why I suggest you to run first a model w/o covariates
-# for topical content. REMEMBER however: the results you get when you add variables for topic prevalence but no
-# variables fro topical content will be (slighly or more) different to the ones when you add variables for both 
-# topic prevalence and topical content together
-
-# 3) it is highly suggested to employ the "spectral" intitialization  based on the method of moments, which is deterministic 
-# and globally consistent under reasonable conditions. This means that no matter of the seed that is set, the SAME results will be generated. 
-# As an alternative you could employ a LDA initialization. In this, case, however, the answers the estimation procedure comes up with may depend 
-# on starting values of the parameters (e.g., the distribution over words for a particular topic). 
-# So remember always to define a set seed to replicate your analysis in this latter case (as we did with Topic Models)!
-
-# Note that by writing "s(year)" we use a spline functions for non-linear transformations of the time-variable.
-# if you want to add just a linear relationship between "year" and topics, just write "year"
-
-# You can also relax the number of maximum required iterations if you want, but that would require you (much) more
-# time especially with large datasets. However 75 is a very small number! We apply that here just to save time!
-# The default value is 500.
-
-system.time(stmFitted_wo <- stm(DfmStm $documents, DfmStm $vocab, K = 15, max.em.its = 75, 
+system.time(stmFitted_wo <- stm(DfmStm $documents, DfmStm $vocab, K = 14, max.em.its = 75, 
                              data = DfmStm $meta, init.type = "Spectral"))
 
-system.time(stmFitted <- stm(DfmStm $documents, DfmStm $vocab, K = 15, max.em.its = 75, 
+system.time(stmFitted <- stm(DfmStm $documents, DfmStm $vocab, K = 14, max.em.its = 75, 
                              prevalence = ~ pres + s(year_month),  data = DfmStm $meta, init.type = "Spectral")) # around 28 seconds on my laptop
 
 
@@ -133,10 +176,10 @@ labelTopics(stmFitted, n=8)
 labelTopics(stmFitted, n=8, topics=1) # the same just for topic 1
 
 # Plot
-plot(stmFitted_wo, type = "labels", labeltype = c("frex"), n=5) # plot just frex words 
-plot(stmFitted, type = "labels", labeltype = c("frex"), n=5) # plot just frex words 
+plot(stmFitted_wo, type = "labels", labeltype = c("frex"), n=10) # plot just frex words 
+plot(stmFitted, type = "labels", labeltype = c("frex"), n=10) # plot just frex words 
 
-plot(stmFitted, type = "summary", labeltype = c("frex"), n=5)  # topic 5 is the most frequent one
+plot(stmFitted, type = "summary", labeltype = c("frex"), n=10)  # topic 5 is the most frequent one
 # topic meaning: according to frex words, topic 5 seems to be related to the trend in the economy; topic 10 to inflation; 
 # topic 9 about politics; etc.
 
@@ -146,74 +189,8 @@ plot(stmFitted, type = "hist", labeltype = c("frex")) # Here topic 5 appears as 
 
 
 
-# To be discussed ---------------------------------------------------------
 
 
 
-# Let's read the documents most associated with each topic
-# In particular, let's identify the most representative documents for a particular topic. 
-# We can also use this in order to get a better sense of the content of actual documents with a high topical content.
-docs <- tweets$text
-str(docs)
 
-# Let's focus on topic 5 for example and let's identify the three texts with the highest theta for that topic
-# and let's read the first 200 words from each of them
 
-docs2 <- substr(docs, start = 1, stop = 200)
-thoughts <- findThoughts(stmFitted, texts=docs2, n=3)$docs[[3]]
-par(mfrow = c(1, 2),mar = c(.5, .5, 1, .5))
-plotQuote(thought5, width = 30, main = "Topic 5")
-
-# Let's focus on topic 9 and let's do the same
-thought9 <- findThoughts(stmFitted, texts=docs2, topics=9, n=3)$docs[[1]]
-par(mfrow = c(1, 2),mar = c(.5, .5, 1, .5))
-plotQuote(thought9, width = 30, main = "Topic 9")
-
-# Let's plot Topic 5 and 9 together
-par(mfrow = c(1, 2),mar = c(.5, .5, 1, .5))
-plotQuote(thought5, width = 30, main = "Topic 5 - Economy")
-plotQuote(thought9, width = 30, main = "Topic 9 - Politics")
-
-# which are the documents with the highest theta for each k?
-apply(stmFitted$theta,2,which.max) 
-# let's read the entire documents with the highest theta for topic=5
-strwrap(texts(myCorpus)[485])
-
-# same one as below
-docs2 <- substr(docs, start = 1, stop = 200)
-thought5 <- findThoughts(stmFitted, texts=docs2, topics=5, n=1)$docs[[1]]
-par(mfrow = c(1, 2),mar = c(.5, .5, 1, .5))
-plotQuote(thought5, width = 30, main = "Topic 5")
-
-# which is the document with the 2nd largest value for each topic?
-maxn <- function(n) function(x) order(x, decreasing = TRUE)[n]
-apply(stmFitted$theta, 2, maxn(2))
-# let's read the entire documents with the second highest theta for topic=5
-strwrap(texts(myCorpus)[93])
-
-# which is the document with the 3rd largest value for each topic?
-apply(stmFitted$theta, 2, maxn(3))
-# let's read the entire documents with the third highest theta for topic=5
-strwrap(texts(myCorpus)[67])
-
-# which are the most likely topics across our documents?
-apply(stmFitted$theta,1,which.max) 
-table(apply(stmFitted$theta,1,which.max) )
-# you can save them as a document-level variable.
-docvars(myDfm , 'STMtopic') <- apply(stmFitted$theta,1,which.max) 
-str(myDfm)
-head(docvars(myDfm))
-
-# or you can also save them back in the original dataframe
-nyt2$topic <- apply(stmFitted$theta,1,which.max)
-str(nyt2) 
-# Topic 5 - 5 random documents associated to it
-set.seed(123)
-sample(nyt2$text[nyt2$topic==5], 5)
-
-# But we already know that STM actually computes a distribution over topics. 
-# In other words, each document is considered to be about a mixture of topics as we have already discussed!
-# This information is included in the matrix thera in the STM object 
-
-# For example, news 1 is 43% about topic 7 and 28% about topic 4 for example
-round(stmFitted$theta[1,], 2)
