@@ -61,16 +61,16 @@ library(xlsx)
 # Data collection ---------------------------------------------------------
 
 #rt <- search_tweets("#CovidVaccine", n = 10000, include_rts = FALSE)
-head(rt$text, 20)
+#save(rt, file = "vaccine_tweets_raw.RData")
+
+
+# Tweets clearing ---------------------------------------------------------
+#load("vaccine_tweets_raw.RData")
 
 #Get only the tweets in english
 vaccine_tweets <- rt %>% filter(lang == "en") 
 
-
-# Tweets clearing ---------------------------------------------------------
-
-
-print(vaccince_tweets$text[1:30])
+#Cleaning
 clean_vaccine_tweet <- vaccine_tweets
 
 url_regex <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
@@ -78,7 +78,7 @@ clean_vaccine_tweet$text <- str_remove_all(clean_vaccine_tweet$text, url_regex) 
 clean_vaccine_tweet$text <- gsub("&amp", "", clean_vaccine_tweet$text) #remove html entity
 clean_vaccine_tweet$text <- gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", clean_vaccine_tweet$text) #remove rt via
 clean_vaccine_tweet$text <- gsub("@\\w+", "", clean_vaccine_tweet$text) #remove mentions
-clean_vaccine_tweet$text <- str_replace_all(clean_vaccine_tweet$text,"#[a-z,A-Z]*","") #remove hashtags
+#clean_vaccine_tweet$text <- str_replace_all(clean_vaccine_tweet$text,"#[a-z,A-Z]*","") #remove hashtags
 clean_vaccine_tweet$text <- gsub("[^[:alnum:]///' ]", " ", clean_vaccine_tweet$text)     #keep only alpha numeric 
 
 print(clean_vaccine_tweet$text[1:30])
