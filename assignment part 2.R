@@ -182,6 +182,7 @@ plot(stmFitted, type = "labels", labeltype = c("frex"), n=10) # plot just frex w
 plot(stmFitted, type = "summary", labeltype = c("frex"), n=10)  # topic 5 is the most frequent one
 # topic meaning: according to frex words, topic 5 seems to be related to the trend in the economy; topic 10 to inflation; 
 # topic 9 about politics; etc.
+plot(stmFitted_wo, type = "summary", labeltype = c("frex"), n=10) 
 
 plot(stmFitted, type = "hist", labeltype = c("frex")) # Here topic 5 appears as more "evenly" distributed across documents than
 # for example topic 11 for example
