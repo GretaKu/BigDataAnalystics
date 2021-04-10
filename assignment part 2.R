@@ -1,14 +1,17 @@
 
 # Libraries ---------------------------------------------------------------
 
-library(readtext)
 library(quanteda)
+library(readtext)
 library(ggplot2)
-library(quanteda.textstats)
-library(tidyverse)
-library(rio)
-library(rtweet)
+library(ldatuning)
+library(topicmodels)
+library(lubridate)
+library(topicdoc)
+library(cowplot)
 library(stm)
+library(igraph)
+library(stringr)
 
 
 # Loading Twitter Data ------------------------------------------------------------
@@ -35,6 +38,8 @@ tweets$year_month <- as.numeric(paste(tweets$year, tweets$month, sep=""))
 table(tweets$year_month)
 
 str(tweets)
+
+
 
 # Saving and Loading Tweets -----------------------------------------------
 
