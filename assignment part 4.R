@@ -3,11 +3,9 @@
 #download between 5,000 and 10,000 tweets
 #Define a set of categories for the tweets you have
 #downloaded (it can be a 2-set categories such as
-            #positive/negative, or a 3-set categories such as
-            #positive/negative/neutral, or anything else you
-            #want!!!)
-
-
+#positive/negative, or a 3-set categories such as
+#positive/negative/neutral, or anything else you
+ #want!!!)
 
 
 #Define a training-set (around 200 tweets if you have a
@@ -15,8 +13,6 @@
                        #etc.) and a test-set. Manually codify the tweets
 #Each of the student in the group (if any) must codify
 #the same tweets
-
-
 
 
 #In case you are working in group: Check your inter-coder reliability
@@ -41,17 +37,34 @@
 
 library(tidyverse)
 library(rtweet)
+library(quanteda)
+library(readtext)
+library(caTools)
+library(e1071)
+library(randomForest)
+library(caret)
+library(naivebayes)
+library(car)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(iml)
+library(future)
+library(future.callr)
+library(gridExtra)
+library(xgboost)
+library(Ckmeans.1d.dp)
+library(callr)
+library(xlsx)
 
 
 # Data collection ---------------------------------------------------------
 
-rt <- search_tweets("#CovidVaccine", n = 10000, include_rts = FALSE)
-
+#rt <- search_tweets("#CovidVaccine", n = 10000, include_rts = FALSE)
 head(rt$text, 20)
 
 #Get only the tweets in english
-
-vaccine_tweets <- rt %>% filter(lang == "en")
+vaccine_tweets <- rt %>% filter(lang == "en") 
 
 
 # Tweets clearing ---------------------------------------------------------
@@ -70,4 +83,20 @@ clean_vaccine_tweet$text <- gsub("[^[:alnum:]///' ]", " ", clean_vaccine_tweet$t
 
 print(clean_vaccine_tweet$text[1:30])
 
-save(clean_vaccine_tweet, file = "clean_vaccine_tweet.RData")
+#save(clean_vaccine_tweet, file = "clean_vaccine_tweet.RData")
+
+
+# Creating Test and Train Dataset -----------------------------------------
+
+load("clean_vaccine_tweet.RData")
+
+vaccine_short <- clean_vaccine_tweet %>% select(created_at, status_id, text)
+
+split <- sample.split(vaccine_short$text, SplitRatio = 0.964)
+test <- subset(vaccine_short, split == TRUE)
+train <- subset(vaccine_short, split == FALSE)
+
+write_csv2(train, "train_raw.csv")
+
+save(test, file = "test_raw.RData")
+save(train, file = "train_raw.RData")
