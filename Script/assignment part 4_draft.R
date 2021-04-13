@@ -1,42 +1,6 @@
-#FOURTH PART
-#Run a further query on Twitter as you like and
-#download between 5,000 and 10,000 tweets
-#Define a set of categories for the tweets you have
-#downloaded (it can be a 2-set categories such as
-#positive/negative, or a 3-set categories such as
-#positive/negative/neutral, or anything else you
- #want!!!)
-
-
-#Define a training-set (around 200 tweets if you have a
-                       #2-set categories; 300 if you have a 3-set categories,
-                       #etc.) and a test-set. Manually codify the tweets
-#Each of the student in the group (if any) must codify
-#the same tweets
-
-
-#In case you are working in group: Check your inter-coder reliability
-#If the results are satisfactory (i.e., k>.7/.75) then cool!
-#Each of the coder will use his/her codified tweets to
-#classify the test-set
-#If, however, you get an unsatisfactory result (i.e.,
-                                                 #k<.7) you should go back to the codification stage
-#and find out why did happen and improve the
-#classification so to increase the agreement score
-#In each of your assignment, plz write me the ppl
-#belonging to your group, the k-value you get for the
-#inter-coder reliability part, and if you had to repeat the
-#analysis a n-number of rounds
-#Then run the 3 ML algorithms discussed in class on
-#the training-set and pick up the best algorithm via
-#cross-validation
-#Finally, classify the test-set
-
-
-# Library -----------------------------------------------------------------
-
-library(tidyverse)
-library(rtweet)
+rm(list=ls(all=TRUE))
+setwd("C:/Users/luigi/Dropbox/TOPIC MODEL")
+getwd()
 library(quanteda)
 library(readtext)
 library(caTools)
@@ -55,118 +19,50 @@ library(gridExtra)
 library(xgboost)
 library(Ckmeans.1d.dp)
 library(callr)
-library(xlsx)
-library(rio)
 
-# Data collection ---------------------------------------------------------
+# The data we will be using are some English social media disaster tweets discussed in 
+# this article: https://arxiv.org/pdf/1705.02009.pdf 
+# It consist of a number of tweets regarding accidents mixed in with a selection control tweets (not about accidents)
 
-#rt <- search_tweets("#CovidVaccine", n = 10000, include_rts = FALSE)
-#save(rt, file = "vaccine_tweets_raw.RData")
+#####################################################
+# FIRST STEP: let's create the DfM for the training-set
+#####################################################
 
-
-# Tweets clearing ---------------------------------------------------------
-#load("vaccine_tweets_raw.RData")
-
-#Get only the tweets in english
-vaccine_tweets <- rt %>% filter(lang == "en") 
-
-#Cleaning
-clean_vaccine_tweet <- vaccine_tweets
-
-url_regex <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-clean_vaccine_tweet$text <- str_remove_all(clean_vaccine_tweet$text, url_regex) #remove url
-clean_vaccine_tweet$text <- gsub("&amp", "", clean_vaccine_tweet$text) #remove html entity
-clean_vaccine_tweet$text <- gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", clean_vaccine_tweet$text) #remove rt via
-clean_vaccine_tweet$text <- gsub("@\\w+", "", clean_vaccine_tweet$text) #remove mentions
-#clean_vaccine_tweet$text <- str_replace_all(clean_vaccine_tweet$text,"#[a-z,A-Z]*","") #remove hashtags
-clean_vaccine_tweet$text <- gsub("[^[:alnum:]///' ]", " ", clean_vaccine_tweet$text)     #keep only alpha numeric 
-
-print(clean_vaccine_tweet$text[1:30])
-
-#save(clean_vaccine_tweet, file = "clean_vaccine_tweet.RData")
-
-
-# Creating Test and Train Dataset -----------------------------------------
-
-load("clean_vaccine_tweet.RData")
-
-vaccine_short <- clean_vaccine_tweet %>% select(created_at, status_id, text)
-
-split <- sample.split(vaccine_short$text, SplitRatio = 0.964)
-test <- subset(vaccine_short, split == TRUE)
-train <- subset(vaccine_short, split == FALSE)
-
-write_csv2(train, "train_raw.csv")
-
-save(test, file = "test_raw.RData")
-write_csv2(test, file = "test_raw.csv")
-save(train, file = "train_raw.RData")
-
-
-# Import Train  -----------------------------------------------------------
-
-#recode train dominik
-dominik <- import("train_raw_Dominik.csv")
-dominik <- dominik %>% mutate(category = ifelse(category == 3, 1,
-                                     ifelse(category == 1, 3, category)))
-export(dominik, "train_raw_Dominik.csv")
-
-greta <- import("train_raw_greta.csv")
-
-merge <- merge(dominik, greta, by = c("status_id", "created_at"))
-
-               
-#import categories train data               
-cat <- import("train_raw_cat.csv")
-cat <- cat %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
-table(cat$check)
-
-export(cat, "train_raw_check.csv")
-
-#install.packages("irr")
-library(irr)
-train_data <- import("train_raw_check.csv")
-train_data <- train_data %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
-table(train_data$check)
-kappa2(train_data[,4:5])
-
-
-# ML Algorithm ------------------------------------------------------------
-
-# FIRST STEP: let's create the DfM for the training-set -------------------
-
-str(train_data)
+x <- read.csv("train_disaster.csv", stringsAsFactors=FALSE)
+str(x)
 # class-label variable: choose_one (0=tweets not relevant; 1=relevant tweets)
-table(train_data$category_greta)
-prop.table(table(train_data$category_greta))
+table(x$choose_one)
+prop.table(table(x$choose_one))
+nrow(x)
 
-myCorpusTwitterTrain <- corpus(train_data)
-Dfm_train <- dfm(myCorpusTwitterTrain , remove = c(stopwords("smart")), remove_punct = TRUE, remove_numbers=TRUE, 
+myCorpusTwitterTrain <- corpus(x)
+Dfm_train <- dfm(myCorpusTwitterTrain , remove = c(stopwords("english")), remove_punct = TRUE, remove_numbers=TRUE, 
                  tolower = TRUE, remove_symbols=TRUE,  remove_separators=TRUE, remove_url = TRUE, split_hyphens = TRUE)
 
+# Let's trim the dfm in order to keep only tokens that appear in 2 or more tweets (tweets are short texts!)
+# and let's keep only features with at least 2 characters
 Dfm_train <- dfm_trim(Dfm_train , min_docfreq = 2, verbose=TRUE)
 Dfm_train  <- dfm_remove(Dfm_train , min_nchar = 2)
 topfeatures(Dfm_train , 20)  # 20 top words
 
+#####################################################
+# SECOND STEP: let's create the DfM for the test-set
+#####################################################
 
-
-# SECOND STEP: let's create the DfM for the test-set ----------------------
-
-x10 <- read.csv("test_raw.csv", sep = ";")
+x10 <- read.csv("test_disaster.csv", stringsAsFactors=FALSE)
 str(x10)
 nrow(x10)
 myCorpusTwitterTest <- corpus(x10)
-Dfm_test<- dfm(myCorpusTwitterTest , remove = c(stopwords("smart")), remove_punct = TRUE, remove_numbers=TRUE, 
+Dfm_test<- dfm(myCorpusTwitterTest , remove = c(stopwords("english")), remove_punct = TRUE, remove_numbers=TRUE, 
                tolower = TRUE, remove_symbols=TRUE,  remove_separators=TRUE, remove_url = TRUE, split_hyphens = TRUE)
 Dfm_test<- dfm_trim(Dfm_test, min_docfreq = 2, verbose=TRUE)
 Dfm_test<- dfm_remove(Dfm_test, min_nchar = 2)
 topfeatures(Dfm_test , 20)  # 20 top words
 
-
-
-# THIRD STEP: Let's make the features identical between train and  --------
-# test-set by passing Dfm_train to dfm_match() as a pattern.
+#####################################################
+# THIRD STEP: Let's make the features identical between train and test-set by passing Dfm_train to dfm_match() as a pattern.
 # after this step, we can "predict" by employing only the features included in the training-set
+#####################################################
 
 setequal(featnames(Dfm_train), featnames(Dfm_test)) 
 length(Dfm_test@Dimnames$features) 
@@ -175,10 +71,9 @@ test_dfm  <- dfm_match(Dfm_test, features = featnames(Dfm_train))
 length(test_dfm@Dimnames$features) 
 setequal(featnames(Dfm_train), featnames(test_dfm ))
 
-
-
-# FOURTH STEP: Let's convert the two DfMs into matrices for the ML --------
-# algorithms to work
+#####################################################
+# FOURTH STEP: Let's convert the two DfMs into matrices for the ML algorithms to work
+#####################################################
 
 train <- as.matrix(Dfm_train) # dense matrix
 object.size(train)
@@ -187,22 +82,41 @@ trainSP <- as(Dfm_train, "dgCMatrix") # compressed matrix
 object.size(trainSP )
 object.size(train)/object.size(trainSP )
 
+# this is going to make a HUGE difference when you have a large matrix as test and train!!!
+# we will mainly use normal (i.e., not compressed) matrix in our class given that we will always use small dataset.
+# But keeps this in mind!
+
 test <- as.matrix(test_dfm)
 
+#####################################################
+# FIFHT STEP: let's estimate a ML Model
+#####################################################
 
 
-# FIFHT STEP: let's estimate a ML Model -----------------------------------
 # Naive Bayes Model -------------------------------------------------------
 
+
+
+# we will use the naivebayes package. Another possibile package you can consider is the fastNaiveBayes package 
+
+# given our training-set, we have to use a Multinomial rather rather than a Binomial distribution given that our
+# features can assume a value different than just 0/1, i.e., a one-hot-encoding. Indeed:
 table(Dfm_train@x )
+# to run a Binomial model with naivebayes just replace "multinomial_naive_bayes" with "bernoulli_naive_bayes" in the below command
 
-str(Dfm_train@docvars$category_greta) 
+# Which is our DV?
+str(Dfm_train@docvars$choose_one) # that's an integer variable. Not good for a classification! It should always be a factor variable
+# So we will use as.factor to transform it into a factor variable
 
-set.seed(123) 
-system.time(NB <- multinomial_naive_bayes(x=train, y=as.factor(Dfm_train@docvars$category_greta), laplace = 1))
+# Note that instead of y=as.factor(Dfm_train@docvars$choose_one) in the formula of the NB we could have used
+# y=as.factor(x$choose_one) of course!
+
+set.seed(123) # (define a set.seed for being able to replicate the results!)
+system.time(NB <- multinomial_naive_bayes(x=train, y=as.factor(Dfm_train@docvars$choose_one), laplace = 1))
 summary(NB)
-prop.table(table(Dfm_train@docvars$category_greta))
-
+prop.table(table(Dfm_train@docvars$choose_one)) # prior probabilities
+# let's see the association between words and probabilities (i.e., matrix with class conditional parameter estimates).
+# take a look at "video" and "cream". The former increases the probability of a relevant tweet compared to the latter one
 head(NB$params) 
 
 # Let's investigate about this issue a bit more. Why should we care about it?
@@ -232,21 +146,14 @@ NB_prob <- as.data.frame(NB$params)
 NB_prob$Feature <- row.names(NB_prob)
 str(NB_prob)
 # let's estimate the features that change the most the difference between the relevant and irrelevant conditional probabilities
-NB_prob$diff12 <- NB_prob[,2]-NB_prob[,1]
-NB_prob$diff13 <- NB_prob[,3]-NB_prob[,1]
-NB_prob$diff23 <- NB_prob[,2]-NB_prob[,3]
+NB_prob$diff <- NB_prob[,2]-NB_prob[,1]
 str(NB_prob)
-print(head(NB_prob[order(NB_prob$diff12 , decreasing=TRUE),], 15)) # relevant words for the difference between negativ and neutral
-print(head(NB_prob[order(NB_prob$diff13 , decreasing=TRUE),], 15)) # relevant words
-print(head(NB_prob[order(NB_prob$diff23 , decreasing=TRUE),], 15)) # relevant words
+print(head(NB_prob[order(NB_prob$diff , decreasing=TRUE),], 15)) # relevant words
+print(head(NB_prob[order(NB_prob$diff , decreasing=FALSE),], 15)) # irrelevant words
+NB_prob$sign <- ifelse(NB_prob$diff>0,"relevant","irrelevant")
+str(NB_prob)
 
-
-print(head(NB_prob[order(NB_prob$diff13 , decreasing=FALSE),], 15)) # irrelevant words
-
-#NB_prob$sign <- ifelse(NB_prob$diff>0,"relevant","irrelevant")
-#str(NB_prob)
-
-# let's extract the top 20-most relevant contributing features
+# let's extract the top 20-most irrelevant and the 20-most relevant contributing features
 NB_prob2 <- top_n(NB_prob, 20, diff ) 
 NB_prob2
 NB_prob3 <- top_n(NB_prob, -20, diff ) 
@@ -277,9 +184,9 @@ predicted_nb <- predict(NB ,test )
 table(predicted_nb )
 prop.table(table(predicted_nb ))
 
-
-
-# Random Forest -----------------------------------------------------------
+#####################################################
+# let's run a Random Forest
+#####################################################
 
 # we will use the randomForest package. If you are employing compressed matrices, plz use the ranger package.
 # the ranger package is also usually faster than the randomForest one
@@ -810,5 +717,3 @@ library(gridExtra)
 grid.arrange(NB_graph, RF_graph, SVM_graph , XGB_graph,  nrow=2) # Plot everything together
 
 # and so, which result is to trust more than the other one? For answering to that, we need to introduce the Cross-Validation procedure!
-
-
