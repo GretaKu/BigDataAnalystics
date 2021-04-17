@@ -57,44 +57,47 @@ library(Ckmeans.1d.dp)
 library(callr)
 library(xlsx)
 library(rio)
+library(irr)
 
 # Data collection ---------------------------------------------------------
 
-#rt <- search_tweets("#CovidVaccine", n = 10000, include_rts = FALSE)
-#save(rt, file = "vaccine_tweets_raw.RData")
+# We collect data with hashtag covidvaccine and code if a tweet is pro vaccination or not. 0 = not, 1 = pro 
 
+# Pulling tweets
+tweets <- search_tweets("#CovidVaccine", n = 10000)
 
 # Tweets clearing ---------------------------------------------------------
 #load("vaccine_tweets_raw.RData")
 
 #Get only the tweets in english
-vaccine_tweets <- rt %>% filter(lang == "en") 
+tweets <- tweets %>% filter(lang == "en") 
 
 #Cleaning
-clean_vaccine_tweet <- vaccine_tweets
+clean_tweet <- tweets
 
 url_regex <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-clean_vaccine_tweet$text <- str_remove_all(clean_vaccine_tweet$text, url_regex) #remove url
-clean_vaccine_tweet$text <- gsub("&amp", "", clean_vaccine_tweet$text) #remove html entity
-clean_vaccine_tweet$text <- gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", clean_vaccine_tweet$text) #remove rt via
-clean_vaccine_tweet$text <- gsub("@\\w+", "", clean_vaccine_tweet$text) #remove mentions
-#clean_vaccine_tweet$text <- str_replace_all(clean_vaccine_tweet$text,"#[a-z,A-Z]*","") #remove hashtags
-clean_vaccine_tweet$text <- gsub("[^[:alnum:]///' ]", " ", clean_vaccine_tweet$text)     #keep only alpha numeric 
+clean_tweet$text <- str_remove_all(clean_tweet$text, url_regex) #remove url
+clean_tweet$text <- gsub("&amp", "", clean_tweet$text) #remove html entity
+clean_tweet$text <- gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", clean_tweet$text) #remove rt via
+clean_tweet$text <- gsub("@\\w+", "", clean_tweet$text) #remove mentions
+#clean_tweet$text <- str_replace_all(clean_tweet$text,"#[a-z,A-Z]*","") #remove hashtags
+clean_tweet$text <- gsub("[^[:alnum:]///' ]", " ", clean_tweet$text)     #keep only alpha numeric 
 
-print(clean_vaccine_tweet$text[1:30])
+print(clean_tweet$text[1:30])
 
-#save(clean_vaccine_tweet, file = "clean_vaccine_tweet.RData")
+save(clean_tweet, file = "clean_tweet.RData")
 
 
 # Creating Test and Train Dataset -----------------------------------------
 
-load("clean_vaccine_tweet.RData")
+#load("clean_vaccine_tweet.RData")
 
-vaccine_short <- clean_vaccine_tweet %>% select(created_at, status_id, text)
+tweets_short <- clean_tweet %>% select(user_id, created_at, status_id, text)
 
-split <- sample.split(vaccine_short$text, SplitRatio = 0.964)
-test <- subset(vaccine_short, split == TRUE)
-train <- subset(vaccine_short, split == FALSE)
+set.seed(123)
+split <- sample.split(tweets_short$text, SplitRatio = 0.97738)
+test <- subset(tweets_short, split == TRUE)
+train <- subset(tweets_short, split == FALSE)
 
 write_csv2(train, "train_raw.csv")
 
@@ -112,7 +115,6 @@ dominik <- dominik %>% mutate(category = ifelse(category == 3, 1,
 export(dominik, "train_raw_Dominik.csv")
 
 greta <- import("train_raw_greta.csv")
-
 merge <- merge(dominik, greta, by = c("status_id", "created_at"))
 
                
@@ -123,8 +125,7 @@ table(cat$check)
 
 export(cat, "train_raw_check.csv")
 
-#install.packages("irr")
-library(irr)
+# checking inter rater reliability
 train_data <- import("train_raw_check.csv")
 train_data <- train_data %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
 table(train_data$check)
@@ -205,29 +206,6 @@ prop.table(table(Dfm_train@docvars$category_greta))
 
 head(NB$params) 
 
-# Let's investigate about this issue a bit more. Why should we care about it?
-
-# Often, ML models are considered “black boxes” due to their complex inner-workings. However, because of their complexity, 
-# they are typically more accurate for predicting nonlinear, faint, or rare phenomena. Unfortunately, more accuracy often comes at the 
-# expense of interpretability, and interpretability is crucial. It is not enough to identify a machine learning model that optimizes 
-# predictive performance; understanding and trusting model results is a hallmark of good science! 
-# Luckily, several advancements have been made to aid in interpreting ML models over the years.
-# Interpreting ML models is an emerging field that has become known as "Interpretable Machine Learning" (IML).
-
-# Approaches to model interpretability can be broadly categorized as providing global or local explanations.
-# Global interpretations help us understand the inputs and their entire modeled relationship with the prediction target.
-# Local interpretations help us understand model predictions for a single row of data or a group of similar rows.
-
-# Global interpretability is about understanding how the model makes predictions, based on a holistic view of its features and how they 
-# influence the underlying model structure. It answers questions regarding which features are relatively influential as well as how these 
-# features influence the response variable. In this latter case, we assess the magnitude of a variable’s relationship with the response 
-# as compared to other variables used in the model. 
-
-# In text analytics (given that we are dealining with huge DfM wherein the features per-se are not the main focus of our interest)
-# we are mainly interested in global interpretations; however if you use ML for other aims, local interpretations become VERY important!!!
-
-# So let's do some Global Interpretation for our NB!
-
 NB_prob <- as.data.frame(NB$params)
 NB_prob$Feature <- row.names(NB_prob)
 str(NB_prob)
@@ -281,18 +259,9 @@ prop.table(table(predicted_nb ))
 
 # Random Forest -----------------------------------------------------------
 
-# we will use the randomForest package. If you are employing compressed matrices, plz use the ranger package.
-# the ranger package is also usually faster than the randomForest one
-
-# note that as hyperameter (or tuning-parameter), I select a specific value for the number of trees. A RF has also other hyperparameters. 
-# More on this later on
-
-set.seed(123) # (define a set.seed for being able to replicate the results!)
-system.time(RF <- randomForest(y= as.factor(Dfm_train@docvars$choose_one), x=train, importance=TRUE,  do.trace=TRUE, ntree=500))
-
-# A natural benefit of the bootstrap resampling process is that random forests have an out-of-bag (OOB) sample
-# that provides a reasonable approximation of the test error. This provides a built-in validation set without any extra work on your part. 
-# However, REMEMBER: this is less efficient than changing several hyperparameters and doing a k-fold cross-validation as we will see later on!
+set.seed(123)
+system.time(RF <- randomForest(y= as.factor(Dfm_train@docvars$category_greta), x=train, importance=TRUE,  do.trace=TRUE, ntree=500))
+# 500 trees to start
 
 str(RF$err.rate)
 RF$err.rate[nrow(RF$err.rate),] # our final error (overall, and for each of the two classes: irrelevant and relevant tweets)
@@ -301,6 +270,10 @@ plot(RF) # the errors for the two classes (red=irrelevant; green=relevant. We ma
 error <- as.data.frame(RF$err.rate)
 # number of trees with the lowest OOB error
 which.min(error$OOB) # 72
+
+set.seed(123)
+system.time(RF <- randomForest(y= as.factor(Dfm_train@docvars$category_greta), x=train, importance=TRUE,  do.trace=TRUE, ntree=500))
+# 500 trees to start
 
 set.seed(123)
 system.time(RF2 <- randomForest(y= as.factor(Dfm_train@docvars$choose_one), x=train, importance=TRUE, ntree=72, do.trace=TRUE))
