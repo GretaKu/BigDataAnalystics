@@ -96,7 +96,7 @@ save(clean_tweet, file = "clean_tweet.RData")
 tweets_short <- clean_tweet %>% select(user_id, created_at, status_id, text)
 
 set.seed(123)
-split <- sample.split(tweets_short$text, SplitRatio = 0.97738)
+split <- sample.split(tweets_short$text, SplitRatio = 0.952)
 test <- subset(tweets_short, split == TRUE)
 train <- subset(tweets_short, split == FALSE)
 
