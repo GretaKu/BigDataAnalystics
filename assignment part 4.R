@@ -56,12 +56,8 @@ library(xgboost)
 library(Ckmeans.1d.dp)
 library(callr)
 library(xlsx)
-<<<<<<< HEAD
-
-=======
 library(rio)
 library(irr)
->>>>>>> 0a21610085777cde6d6a651eaaac336af6b6c154
 
 # Data collection ---------------------------------------------------------
 
@@ -106,9 +102,8 @@ train <- subset(tweets_short, split == FALSE)
 write_csv2(train, "train_raw.csv")
 
 save(test, file = "test_raw.RData")
+write_csv2(test, file = "test_raw.csv")
 save(train, file = "train_raw.RData")
-<<<<<<< HEAD
-=======
 
 
 # Import Train  -----------------------------------------------------------
@@ -790,4 +785,3 @@ grid.arrange(NB_graph, RF_graph, SVM_graph , XGB_graph,  nrow=2) # Plot everythi
 # and so, which result is to trust more than the other one? For answering to that, we need to introduce the Cross-Validation procedure!
 
 
->>>>>>> 0a21610085777cde6d6a651eaaac336af6b6c154
