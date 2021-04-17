@@ -104,8 +104,6 @@ write_csv2(train, "train_raw.csv")
 
 save(test, file = "test_raw.RData")
 save(train, file = "train_raw.RData")
-<<<<<<< HEAD
-=======
 
 
 # Import Train  -----------------------------------------------------------
