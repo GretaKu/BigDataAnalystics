@@ -100,11 +100,15 @@ str(tweets_short_Dominik)
 
 set.seed(123)
 tweets_short_Dominik$spl= sample.split(tweets_short_Dominik$text,SplitRatio=0.9798)
-train =subset(tweets_short_Dominik$text, tweets_short_Dominik$spl==TRUE)
-test =subset(tweets_short_Dominik$text, tweets_short_Dominik$spl==FALSE)
+test <- subset(tweets_short_Dominik$text, tweets_short_Dominik$spl==TRUE)
+train <-subset(tweets_short_Dominik$text, tweets_short_Dominik$spl==FALSE)
 
 
-write_csv2(train, file ="train_raw_Dominik.csv")
+train2 <- as.data.frame(train)
+test2 <- as.data.frame(test)
+
+write_csv2(train2, file ="train_raw_Dominik.csv")
+write_csv2(test2, file = "test_raw_Dominik.csv")
 
 save(test, file = "test_raw_Dominik.RData")
 save(train, file = "train_raw_Dominik.RData")
@@ -113,37 +117,42 @@ save(train, file = "train_raw_Dominik.RData")
 # Import Train  -----------------------------------------------------------
 
 #recode train dominik
-dominik <- import("train_raw_Dominik.csv")
-dominik <- dominik %>% mutate(category = ifelse(category == 3, 1,
-                                     ifelse(category == 1, 3, category)))
-export(dominik, "train_raw_Dominik.csv")
+#dominik_1 <- import("test_raw_Dominik.csv")
 
-greta <- import("train_raw_greta.csv")
-merge <- merge(dominik, greta, by = c("status_id", "created_at"))
+#export(dominik, "train_raw_Dominik.csv")
+
+#greta <- import("train_raw_greta.csv")
+#merge <- merge(dominik, greta, by = c("status_id", "created_at"))
 
                
 #import categories train data               
-cat <- import("train_raw_cat.csv")
-cat <- cat %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
-table(cat$check)
+#cat <- import("train_raw_cat.csv")
+#cat <- cat %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
+#table(cat$check)
 
-export(cat, "train_raw_check.csv")
+#export(cat, "train_raw_check.csv")
 
 # checking inter rater reliability
-train_data <- import("train_raw_check.csv")
-train_data <- train_data %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
-table(train_data$check)
-kappa2(train_data[,4:5])
+#train_data <- import("train_raw_check.csv")
+#train_data <- train_data %>% mutate(check = ifelse(category_dominik == category_greta, T, F))
+#table(train_data$check)
+#kappa2(train_data[,4:5])
 
 
 # ML Algorithm ------------------------------------------------------------
 
 # FIRST STEP: let's create the DfM for the training-set -------------------
+train_data <- read.csv("train2_raw_Dominik.csv", sep = ";",stringsAsFactors = FALSE)
 
-str(train_data)
+str(train_data) 
+
+
+
 # class-label variable: choose_one (0=tweets not relevant; 1=relevant tweets)
-table(train_data$category_greta)
-prop.table(table(train_data$category_greta))
+table(train_data$Dominik)
+prop.table(table(train_data$Dominik))
+
+str(train_data$Dominik)
 
 myCorpusTwitterTrain <- corpus(train_data)
 Dfm_train <- dfm(myCorpusTwitterTrain , remove = c(stopwords("smart")), remove_punct = TRUE, remove_numbers=TRUE, 
@@ -157,7 +166,7 @@ topfeatures(Dfm_train , 20)  # 20 top words
 
 # SECOND STEP: let's create the DfM for the test-set ----------------------
 
-x10 <- read.csv("test_raw.csv", sep = ";")
+x10 <- read.csv("test_raw_Dominik.csv", stringsAsFactors = FALSE)
 str(x10)
 nrow(x10)
 myCorpusTwitterTest <- corpus(x10)
@@ -201,12 +210,14 @@ test <- as.matrix(test_dfm)
 
 table(Dfm_train@x )
 
-str(Dfm_train@docvars$category_greta) 
+
+
+
 
 set.seed(123) 
-system.time(NB <- multinomial_naive_bayes(x=train, y=as.factor(Dfm_train@docvars$category_greta), laplace = 1))
+system.time(NB <- multinomial_naive_bayes(x=train, y=as.factor(Dfm_train@docvars$Dominik), laplace = 1))
 summary(NB)
-prop.table(table(Dfm_train@docvars$category_greta))
+prop.table(table(Dfm_train@docvars$Dominik))
 
 head(NB$params) 
 
@@ -214,19 +225,15 @@ NB_prob <- as.data.frame(NB$params)
 NB_prob$Feature <- row.names(NB_prob)
 str(NB_prob)
 # let's estimate the features that change the most the difference between the relevant and irrelevant conditional probabilities
-NB_prob$diff12 <- NB_prob[,2]-NB_prob[,1]
-NB_prob$diff13 <- NB_prob[,3]-NB_prob[,1]
-NB_prob$diff23 <- NB_prob[,2]-NB_prob[,3]
+NB_prob$diff <- NB_prob[,2]-NB_prob[,1]
+
+
 str(NB_prob)
-print(head(NB_prob[order(NB_prob$diff12 , decreasing=TRUE),], 15)) # relevant words for the difference between negativ and neutral
-print(head(NB_prob[order(NB_prob$diff13 , decreasing=TRUE),], 15)) # relevant words
-print(head(NB_prob[order(NB_prob$diff23 , decreasing=TRUE),], 15)) # relevant words
+print(head(NB_prob[order(NB_prob$diff , decreasing=TRUE),], 15)) # relevant words for the difference between negativ and neutral
+print(head(NB_prob[order(NB_prob$diff , decreasing=FALSE),], 15)) # irrelevant words
+NB_prob$sign <- ifelse(NB_prob$diff>0, "proVAX", "NOTproVAX")
 
-
-print(head(NB_prob[order(NB_prob$diff13 , decreasing=FALSE),], 15)) # irrelevant words
-
-#NB_prob$sign <- ifelse(NB_prob$diff>0,"relevant","irrelevant")
-#str(NB_prob)
+str(NB_prob)
 
 # let's extract the top 20-most relevant contributing features
 NB_prob2 <- top_n(NB_prob, 20, diff ) 
@@ -236,14 +243,15 @@ NB_prob3
 NB_prob_new <- rbind(NB_prob2, NB_prob3)
 # reorder the features
 NB_prob_new <-  mutate(NB_prob_new, Feature= reorder(Feature, diff))
+head(NB_prob_new, 20)
 
-ggplot(NB_prob_new, aes(Feature, diff, fill = sign)) +
+ggplot(NB_prob_new, aes(x = Feature,y = diff, )) +
   geom_col(show.legend = F) +
   coord_flip() + 
   ylab("Difference in the conditional probabilities") +
   scale_fill_manual(values = c("orange", "blue")) +
   labs(title = "Social Disaster tweets", 
-       subtitle = "Irrelevant (-) versus Relevant (+) words - NB")
+       subtitle = "NOTproVAX (-) versus proVAX (+) words - NB")
 
 # let's store the graph
 NB_graph <-   ggplot(NB_prob_new, aes(Feature, diff, fill = sign)) +
