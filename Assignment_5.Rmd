@@ -1,0 +1,310 @@
+---
+title: "Assignment_5"
+author: "Dominik Walter & Greta Kurpicz"
+date: "21 4 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Library -----------------------------------------------------------------
+
+library(quanteda)
+library(readtext)
+library(text2vec)
+library(lsa)
+library(dplyr)
+library(e1071)
+library(caret)
+library(stringr)
+library(cvTools)
+
+#Bag-of-words representation of texts
+# ✓ Focusing on frequency of features
+# ✓ Ignoring context, grammar, word order
+
+#How bringing back the context in which a word appears? --> Embedding 
+
+#Let’s create a co-occurrence matrix with a window-size=1
+#If there are kk features, a co-occurrence matrix is
+#a KK x KK matrix, where each cell tells us how frequently
+#wordi occurs with wordj
+#in some window
+
+#Formalizing this idea, the “distributional hypothesis”
+#suggests that words which appear in similar contexts are
+#likely to share similar meanings (Harris, 1970)
+```
+#Prepare embedding
+```{r}
+# let's sum our usual training-set to the test-set to have a larger corpus
+# on which running the WE
+
+x <- read.csv("train_raw_dominik.csv", stringsAsFactors=FALSE)
+str(x)
+x10 <- read.csv("test_raw_Dominik.csv", stringsAsFactors=FALSE)
+str(x10)
+tot <- rbind(x, x10)
+str(tot)
+nrow(tot)
+
+tot$text <- gsub("'"," ",tot$text) # let's replace the apostrophe with an empty space (sometimes Quanteda has some problems
+# to remove them
+
+myCorpusTwitter <- corpus(tot)
+
+# We do minimal preprocessing. We also follow standard practice which is to include all words with a minimum count above 
+# a given threshold, between 5-10 (we choose 5).
+
+Dfm <- dfm(myCorpusTwitter , remove = c(stopwords("smart")), remove_punct = TRUE, remove_numbers=TRUE, 
+           tolower = TRUE, remove_symbols=TRUE,  remove_separators=TRUE, remove_url = TRUE, split_hyphens = TRUE)
+topfeatures(Dfm )
+Dfm <- dfm(myCorpusTwitter , remove = c(stopwords("smart"), "s", "t", "p"), remove_punct = TRUE, remove_numbers=TRUE, 
+           tolower = TRUE, remove_symbols=TRUE,  remove_separators=TRUE, remove_url = TRUE, split_hyphens = TRUE)
+topfeatures(Dfm )
+Dfm <- dfm_trim(Dfm,  min_termfreq = 5, verbose=TRUE)
+```
+# Applying the GloVe algorithm via Quanteda 
+#############################################
+#############################################
+```{r}
+# Let's first extract the vocabulary from our Dfm
+Dfm_vocab <- featnames(Dfm )
+str(Dfm_vocab)
+# Then let's select the tokens that are in the corpus
+mov_tokens <- tokens(myCorpusTwitter) 
+# Then let's match the two vocabularies (i.e., let's keep only those features that are both present in the Corpus
+# as well as in the Dfm (after that we pre-processed the texts!))
+# Note the following: the command "padding=TRUE" leaves an empty string where the removed tokens previously existed. 
+# This is useful if a positional match is needed between the pre- and post-selected tokens, 
+# for instance if a window of adjacency needs to be computed. This prevents that non-adjacent words (in the original text) 
+# becomes adjacent
+mov_tokens2 <- tokens_select(mov_tokens, Dfm_vocab, padding = TRUE)
+str(mov_tokens2)
+
+# Create a term co-occurance matrix (default window is 5; you can change it by using the window	command)
+# why weights? I weight more tokens closer than far away 
+fcmat_news <- fcm(mov_tokens2, context = "window", count = "weighted", weights = 1/(1:5))
+fcmat_news
+str(fcmat_news)
+dim(fcmat_news)
+
+# alternatively
+#fcmat_news_noweights <- fcm(mov_tokens2, context = "window")
+#fcmat_news_noweights
+
+```
+
+# Let's estimate word embeddings via Glove
+
+```{r}
+# Which are the main parameters to look at?
+# rank=number of dimensions (100 dimensions is the default)
+# x_max=maximum number of co-occurrences to use in the weighting function
+# See the GloVe paper for details: http://nlp.stanford.edu/pubs/glove.pdf. Here we select 10
+
+# if you want to exactly reproduce your results, you have to specify n_threads = 1 and then identify the set.seed.
+# you will need more computational time, but at least replication is assured. Note that the differences if
+# we replicate your analysis with a larger number of threads will be minimal
+
+set.seed(123)
+system.time(glove <- GlobalVectors$new(rank=100, x_max=10))
+# you can increase n_iter or decreasing the convergence_tol (but you would need more time...)
+# These two statistics refer to the ML algorithm Glove employs
+system.time(glove_main <- glove$fit_transform(fcmat_news, n_iter = 20, convergence_tol = 0.01, n_threads = 1)) 
+str(glove_main)
+```
+############# plotting words in the dimensional space
+#############################################
+#############################################
+
+```{r}
+glove_dataframe <- as.data.frame(glove_main)
+nrow(glove_dataframe)
+colnames(glove_dataframe )
+
+# let's add to glove_dataframe a specific column called "word" with the list of features
+glove_dataframe$word <- row.names(glove_dataframe )
+colnames(glove_dataframe )
+
+
+plot_words <- function(words, glove_dataframe){
+# empty plot
+plot(0, 0, xlim=c(-2, 2), ylim=c(-2,2), type="n",
+       xlab="Second dimension", ylab="Third dimension")
+for (word in words)
+  {
+# extract second and third dimensions
+vector <- as.numeric(glove_dataframe[glove_dataframe$word==word,2:3])
+# add to plot
+text(vector[1], vector[2], labels=word)
+  }
+}
+
+plot_words(c("covidvaccine", "vaccine", "covid", "covid19", "get", "show", "slots", "vaccinated", "people", "dose" ), glove_dataframe)
+
+# Now we can start to play. The measure of interest in comparing two vectors will be cosine similarity, which 
+# you can think of it similarly to the standard correlation. Let’s see what is similar to "fear"
+
+pfizer <- glove_main["fear", , drop = F]
+cos_sim_pfizer <- sim2(x = glove_main, y = pfizer, method = "cosine", norm = "l2")
+head(sort(cos_sim_pfizer[,1], decreasing = T), 10)
+
+#### Once we have the vectors for each word, we can also compute the similarity between a pair of words:
+
+similarity <- function(word1, word2){
+  lsa::cosine(
+    x=as.numeric(glove_dataframe[glove_dataframe$word==word1,1:100]),
+    y=as.numeric(glove_dataframe[glove_dataframe$word==word2,1:100]))
+}
+
+similarity("thrombosis", "fear")
+
+# Let's see an analogy
+# Which is the closest word vectors for fear - vaccine + Covid?
+
+
+
+ex <- glove_main["pfizer", , drop = FALSE] -
+  glove_main["dose", , drop = FALSE] +
+  glove_main["people", , drop = FALSE]
+
+cos_sim <- textstat_simil(x = as.dfm(glove_main), y = as.dfm(ex),
+                          method = "cosine")
+head(sort(cos_sim[, 1], decreasing = TRUE), 5) # 
+
+# alternatively
+cos_sim_test <- sim2(x = glove_main, y = ex , method = "cosine", norm = "l2")
+head(sort(cos_sim_test[,1], decreasing = T), 5)
+
+```
+############# An important note
+#############################################
+#############################################
+```{r}
+# Note that the GLOVE model learns two sets of word vectors - main (the one we employed above!) and context
+# You can think about that as "target" vectors and "context" vectors. Each word should have its own vector (target) but it also serve as context
+# for other words. Since all computations are symmetrical in the end both vectors should be identical. 
+# But since they use approximate computations the two vectors might be slightly different. 
+
+# While both of word-vectors matrices can be used as result it could be a good idea to average or take a sum of main and context vector.
+# This could lead to higher quality embeddings. In the present case not such a great improvement (so we will avoid that).
+# Having said that, if you want to take the sum of the two vectors, you could simply write:
+
+wv_context <- glove$components
+
+str(t(wv_context)) # we need to transpose the matrix to directly compare it to the original glove_main matrix
+str(glove_main)
+
+dim(wv_context)
+glove_main2 <- glove_main + t(wv_context)
+
+str(t(wv_context))
+str(glove_main)
+str(glove_main2)
+```
+
+#############################################
+#############################################
+# A SVM with WE
+#############################################
+#############################################
+```{r}
+glove_dataframe <- select(glove_dataframe, word, everything()) # move word to the top
+colnames(glove_dataframe )
+glove_dataframe[1:5, 2:11]
+
+# At the moment wlv2 is a matrix of 12,264 rows (one for each feature) and 101 columns (1 column for word and the other 100 for the 100 
+# dimensions of WE)
+nrow(glove_dataframe)
+# in the original Dfm I had 1,500 documents
+ndoc(Dfm)
+
+# what I want to do is estimating for each document in the Dfm a value equals to the weighted average of its words
+# in each of the 100 dimensions of WE. As a result I can generate a new matrix with 1,500 rows (one for each document)
+# and 100 columns (with the average position of each document in each of the 100 dimensions of WE)
+
+embed <- matrix(NA, nrow=ndoc(Dfm), ncol=100) # empty matrix
+
+for (i in 1:ndoc(Dfm)){
+  if (i %% 100 == 0) message(i, '/', ndoc(Dfm))
+  # extract word counts
+  vec <- as.numeric(Dfm[i,])
+  # keep words with counts of 1 or more
+  doc_words <- featnames(Dfm)[vec>0] 
+  # extract embeddings for those words
+  embed_vec <- glove_dataframe[glove_dataframe$word %in% doc_words, 2:101]
+  # aggregate from word- to document-level embeddings by taking AVG
+  embed[i,] <- colMeans(embed_vec, na.rm=TRUE)
+  # if no words in embeddings, simply set to 0
+  if (nrow(embed_vec)==0) embed[i,] <- 0
+} 
+
+str(embed) 
+str(tot)
+glove_dataframe <- select(glove_dataframe, word, everything()) # move word to the top
+colnames(glove_dataframe )
+glove_dataframe[1:5, 2:11]
+```
+
+
+
+# At the moment wlv2 is a matrix of 12,264 rows (one for each feature) and 101 columns (1 column for word and the other 100 for the 100 
+# dimensions of WE)
+```{r}
+
+# let's separate our original training and the test-set
+
+training <- c(1:300)
+str(training)
+test <- c(301:9900)
+str(test)
+# our benchmark: 0.524
+str(tot)
+prop.table(table(tot$Sentiment[training]))
+
+# SVM
+set.seed(123)
+system.time(SVM <-  svm(x=embed[training,], y=as.factor(tot$Sentiment[training]), kernel='linear', cost = 1)) 
+# computing predicted values
+predicted_SV <- predict(SVM, embed[test,], type="class")
+table(predicted_SV)
+prop.table(table(predicted_SV))
+
+# in this case we do know the "true" value for Sentiment in the test-set. So let's build a confusion-matrix
+confusion <- confusionMatrix( predicted_SV,  as.factor(tot$Sentiment[test]),  mode = "everything")
+accuracySV <- confusion $overall[1]
+F1_0 <- (2*confusion $byClass[1]*confusion $byClass[3])/(confusion $byClass[1]+confusion $byClass[3]) # F1 value for category negative 
+F1_1 <- (2*confusion $byClass[2]*confusion $byClass[4])/(confusion $byClass[2]+confusion $byClass[4]) # F1 value for category positive
+F1_SV <- (F1_0+F1_1)/2
+accuracySV
+F1_SV
+
+```
+
+
+
+
+# our benchmark: 0.524
+str(tot)
+prop.table(table(tot$Sentiment[training]))
+
+# SVM
+set.seed(123)
+system.time(SVM <-  svm(x=embed[training,], y=as.factor(tot$Sentiment[training]), kernel='linear', cost = 1)) 
+# computing predicted values
+predicted_SV <- predict(SVM, embed[test,], type="class")
+table(predicted_SV)
+prop.table(table(predicted_SV))
+
+# in this case we do know the "true" value for Sentiment in the test-set. So let's build a confusion-matrix
+confusion <- confusionMatrix( predicted_SV,  as.factor(tot$Sentiment[test]),  mode = "everything")
+accuracySV <- confusion $overall[1]
+F1_0 <- (2*confusion $byClass[1]*confusion $byClass[3])/(confusion $byClass[1]+confusion $byClass[3]) # F1 value for category negative 
+F1_1 <- (2*confusion $byClass[2]*confusion $byClass[4])/(confusion $byClass[2]+confusion $byClass[4]) # F1 value for category positive
+F1_SV <- (F1_0+F1_1)/2
+accuracySV
+F1_SV
