@@ -43,9 +43,9 @@ library(cvTools)
 # let's sum our usual training-set to the test-set to have a larger corpus
 # on which running the WE
 
-x <- read.csv("train_raw_dominik.csv", stringsAsFactors=FALSE)
+x <- read.csv2("train2_raw_Dominik.csv", stringsAsFactors=FALSE, sep = ";")
 str(x)
-x10 <- read.csv("test_raw_Dominik.csv", stringsAsFactors=FALSE)
+x10 <- read.csv("test_predicted_RF.csv", stringsAsFactors=FALSE, sep = ";")
 str(x10)
 tot <- rbind(x, x10)
 str(tot)
@@ -133,7 +133,7 @@ colnames(glove_dataframe )
 
 plot_words <- function(words, glove_dataframe){
 # empty plot
-plot(0, 0, xlim=c(-2, 2), ylim=c(-2,2), type="n",
+plot(0, 0, xlim=c(-1, 1), ylim=c(-1,1), type="n",
        xlab="Second dimension", ylab="Third dimension")
 for (word in words)
   {
@@ -264,18 +264,19 @@ test <- c(301:9900)
 str(test)
 # our benchmark: 0.524
 str(tot)
-prop.table(table(tot$Sentiment[training]))
+prop.table(table(tot$predicted_rf[training]))
 
 # SVM
 set.seed(123)
-system.time(SVM <-  svm(x=embed[training,], y=as.factor(tot$Sentiment[training]), kernel='linear', cost = 1)) 
+system.time(SVM <-  svm(x=embed[training,], y=as.factor(tot$predicted_rf[training]), kernel='linear', cost = 1)) 
 # computing predicted values
 predicted_SV <- predict(SVM, embed[test,], type="class")
 table(predicted_SV)
 prop.table(table(predicted_SV))
+str(predicted_SV)
 
 # in this case we do know the "true" value for Sentiment in the test-set. So let's build a confusion-matrix
-confusion <- confusionMatrix( predicted_SV,  as.factor(tot$Sentiment[test]),  mode = "everything")
+confusion <- confusionMatrix( predicted_SV,  as.factor(tot$predicted_rf[test]),  mode = "everything")
 accuracySV <- confusion $overall[1]
 F1_0 <- (2*confusion $byClass[1]*confusion $byClass[3])/(confusion $byClass[1]+confusion $byClass[3]) # F1 value for category negative 
 F1_1 <- (2*confusion $byClass[2]*confusion $byClass[4])/(confusion $byClass[2]+confusion $byClass[4]) # F1 value for category positive
@@ -284,27 +285,69 @@ accuracySV
 F1_SV
 
 ```
+############ SAME ANALYIS with with a pre-trained word embeddings computed 
+# on a sample of Google news (not sharing that much with movie reviews...still...)
+###########################################################################
+###########################################################################
 
+```{r}
+# extracting the word embeddings on 100 dimensions 
+pre_trained <- readr::read_delim("vector.txt", 
+                                 skip=1, delim=" ", quote="",
+                                 col_names=c("word", paste0("V", 1:100)))
 
+# 100 dimensions + 1 column for features
+colnames(pre_trained)
+nrow(pre_trained) # almost 72K features included; much more than the number of features included in our corpus
+nrow(glove_dataframe)
 
+# let's match the words included in the pre-trained WE object (wlv) with the words included in the Dfm of our corpus
 
-# our benchmark: 0.524
-str(tot)
-prop.table(table(tot$Sentiment[training]))
+pre_trained<- pre_trained[pre_trained$word %in% featnames(Dfm),] 
+nrow(pre_trained) # a number of words < than in our DfM. Why? Cause some words included in the DfM were not included in wlv
+pre_trained[1:20, 1:11]
+
+embed2 <- matrix(NA, nrow=ndoc(Dfm), ncol=100) 
+
+for (i in 1:ndoc(Dfm)){
+  if (i %% 100 == 0) message(i, '/', ndoc(Dfm))
+  # extract word counts
+  vec <- as.numeric(Dfm[i,])
+  # keep words with counts of 1 or more
+  doc_words <- featnames(Dfm)[vec>0] 
+  # extract embeddings for those words
+  embed_vec2 <- pre_trained[pre_trained$word %in% doc_words, 2:101]
+  # aggregate from word- to document-level embeddings by taking AVG
+  embed2[i,] <- colMeans(embed_vec2, na.rm=TRUE)
+  # if no words in embeddings, simply set to 0
+  if (nrow(embed_vec2)==0) embed2[i,] <- 0
+} 
+
+str(embed2) # 9900 documents, with 100 columns (1 for each dimension) 
 
 # SVM
+library(e1071)
 set.seed(123)
-system.time(SVM <-  svm(x=embed[training,], y=as.factor(tot$Sentiment[training]), kernel='linear', cost = 1)) 
+system.time(SVM <-  svm(x=embed2[training,], y=as.factor(tot$predicted_rf[training]), kernel='linear', cost = 1)) 
 # computing predicted values
-predicted_SV <- predict(SVM, embed[test,], type="class")
+predicted_SV <- predict(SVM, embed2[test,], type="class")
 table(predicted_SV)
 prop.table(table(predicted_SV))
-
-# in this case we do know the "true" value for Sentiment in the test-set. So let's build a confusion-matrix
-confusion <- confusionMatrix( predicted_SV,  as.factor(tot$Sentiment[test]),  mode = "everything")
-accuracySV <- confusion $overall[1]
+confusion <- confusionMatrix( predicted_SV,  as.factor(tot$predicted_rf[test]),  mode = "everything")
+accuracySV_newWE <- confusion $overall[1]
 F1_0 <- (2*confusion $byClass[1]*confusion $byClass[3])/(confusion $byClass[1]+confusion $byClass[3]) # F1 value for category negative 
 F1_1 <- (2*confusion $byClass[2]*confusion $byClass[4])/(confusion $byClass[2]+confusion $byClass[4]) # F1 value for category positive
-F1_SV <- (F1_0+F1_1)/2
+F1_SV_newWE <- (F1_0+F1_1)/2
+
+# better performance than what we got when using the local WE
+accuracySV_newWE
+F1_SV_newWE
+
 accuracySV
 F1_SV
+
+
+
+```
+
+
