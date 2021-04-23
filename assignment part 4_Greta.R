@@ -951,3 +951,7 @@ str(test_orig)
 
 test_predicted <- cbind(test_orig, predicted_rf)
 write_csv2(x = test_predicted, file = "test_predicted_RF.csv")
+
+
+x <- read_csv2(file = "test_predicted_RF.csv")
+str(x)

@@ -1,0 +1,111 @@
+---
+title: "Assignment - BIG DATA ANALYTICS"
+author: "Dominik Walter & Greta Kurpicz"
+date: "22 4 2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readtext)
+library(quanteda)
+library(quanteda.textmodels)
+library(cowplot)
+library(quanteda.textplots)
+library(PerformanceAnalytics)
+library(psych)
+library(tidyverse)
+
+```
+
+Information: Due to difficulties on both ends, we decided to do all exercise together. We met several times on zoom and discussed all approaches. Therefore the output below is equally from the both of us.  
+
+# Part 1
+
+## Preparation
+### Loading data
+```{r}
+myText <- readtext("UK new manifestoes/*.txt", 
+                   docvarsfrom = "filenames", dvsep = " ", docvarnames = c("Party", "Year"))
+myText <- gsub("[\u00E2]","",myText$text) 
+
+
+testCorpus <- corpus(myText )
+docnames(testCorpus) <- gsub(".txt", "", docnames(testCorpus ))
+```
+
+### Creating DfM
+
+```{r}
+myDfm <- dfm(testCorpus , remove = stopwords("smart"), tolower = TRUE, stem = TRUE,
+             remove_punct = TRUE, remove_numbers=TRUE, split_hyphens = TRUE)
+topfeatures(myDfm , 20)  # 20 top words
+myDfm <- dfm_remove(myDfm, min_nchar=2)
+```
+
+
+## Wordfish
+```{r}
+# here: Lab 2010 to the left of UKIP 2015 to the right
+wfm <- textmodel_wordfish(myDfm, dir = c(4, 11))
+summary(wfm)
+textplot_scale1d(wfm, margin = "documents")
+
+```
+
+## Wordscores
+```{r}
+# keep only words occurring >1 times
+myDfm <- dfm_trim(myDfm, min_termfreq = 2)
+
+# compute some document similarities
+Simil <- textstat_simil(myDfm , method = "correlation")
+Simil
+
+```
+
+
+### Set reference score
+
+```{r}
+ref_eco <- c(NA, 7.85, NA, NA, 3.85, NA, NA, 5.14, NA, NA, 8.57, NA)
+ref_eu <- c(NA,3.14,NA,NA,5.57,NA,NA,6.71,NA,NA,1.14,NA)
+```
+
+
+### Ref score to Dfm
+```{r}
+ws_eco <- textmodel_wordscores(myDfm, ref_eco)
+ws_eu <- textmodel_wordscores(myDfm, ref_eu)
+summary(ws_eco)
+summary(ws_eu) 
+```
+
+
+### Predict raw Wordscores for all the texts (reference and virgin ones)
+```{r}
+pr_eco <- predict(ws_economy, rescaling = "lbg", newdata = myDfm[c(1,3,4,6,7,9,10,12), ])
+pr_eu <- predict(ws_eu, rescaling = "lbg", newdata = myDfm[c(1,3,4,6,7,9,10,12), ])
+
+pr_economy
+pr_eu
+
+
+
+# add the prediction scores to the reference scores --> DO ISCH MIS PROBLEM VILICHT WEISCH DU MEH@ GRETA
+scores_economy <- c(5.690635, 5.825176, 4.927647, 4.506773, 5.195472, 4.940397, 9.907417, 9.905901)
+scores_eu <- c(4.80248034, 4.76073830, 5.47054701, 5.52623858, 5.77116977, 6.43145194, 0.37347041, 0.02879203 )
+
+
+# assign it to the texts
+ws_economy <- textmodel_wordscores(myDfm,scores_economy)
+ws_eu <-textmodel_wordscores(myDfm,scores_eu)
+```
+
+
+
